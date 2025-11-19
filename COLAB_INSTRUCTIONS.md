@@ -34,7 +34,7 @@ YEARS_TO_DOWNLOAD = 5
 
 **Cell 1: Install packages**
 ```python
-!pip install pandas requests
+!pip install pandas requests beautifulsoup4 lxml
 ```
 
 **Cell 2: Mount Google Drive**
@@ -54,38 +54,42 @@ Paste the entire code and run it!
 
 1. ✅ Script fetches all current S&P 500 companies (~503 companies)
 2. ✅ For each company, downloads 10-K filings from the last 5 years
-3. ✅ Saves files directly to your Google Drive folder
-4. ✅ Organizes by company ticker (e.g., `AAPL/`, `MSFT/`)
-5. ✅ Creates metadata JSON with all filing info
+3. ✅ **Parses HTML and extracts clean text** (removes all HTML tags)
+4. ✅ Saves everything to a **single CSV file** in your Google Drive
+5. ✅ Auto-saves progress after each company (safe from interruptions)
 
 ## Output Structure
 
 Your Google Drive will have:
 ```
 Your_Folder_Name/
-├── AAPL/
-│   ├── AAPL_2024-11-01_10K.html
-│   ├── AAPL_2023-11-03_10K.html
-│   └── ...
-├── MSFT/
-│   ├── MSFT_2024-07-30_10K.html
-│   └── ...
-├── ... (500+ company folders)
-└── filings_metadata.json
+└── sp500_10k_filings.csv
 ```
+
+**CSV Columns:**
+- `ticker` - Company stock ticker (e.g., AAPL)
+- `company_name` - Full company name (e.g., Apple Inc.)
+- `cik` - SEC Central Index Key
+- `filing_date` - Date of filing (YYYY-MM-DD)
+- `accession_number` - SEC accession number
+- `url` - Direct URL to original filing
+- `text_length` - Number of characters in parsed text
+- `text_content` - **Full parsed text content (HTML tags removed)**
 
 ## Expected Runtime
 
 - **Total time**: 2-3 hours for all S&P 500 companies
-- **Storage**: 5-10 GB of files
+- **Storage**: ~2-5 GB for CSV file (plain text is smaller than HTML)
 - **Rate limit**: 10 requests/second (SEC requirement)
+- **Progress**: Auto-saves after each company (resumable)
 
 ## Tips
 
 - ✅ Colab stays active as long as the browser tab is open
 - ✅ You can monitor progress in the output
-- ✅ Script skips already downloaded files (safe to re-run)
+- ✅ CSV is saved incrementally (won't lose progress if interrupted)
 - ✅ Failed companies are logged at the end
+- ✅ Can open CSV directly in Google Sheets or Excel
 
 ## Troubleshooting
 

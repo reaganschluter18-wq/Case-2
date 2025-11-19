@@ -1,10 +1,10 @@
 """
 S&P 500 10-K Filings Scraper for Google Colab
-Scrapes 10-K filings from SEC EDGAR and saves to Google Drive
+Scrapes 10-K filings from SEC EDGAR and saves to Google Drive as CSV
 """
 
 # Install required packages (run this cell first in Colab)
-# !pip install pandas requests
+# !pip install pandas requests beautifulsoup4 lxml
 
 import os
 import time
@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 from typing import List, Dict
+from bs4 import BeautifulSoup
+import re
 
 # ============================================================================
 # CONFIGURATION - MODIFY THESE VALUES
@@ -195,25 +197,55 @@ class SECFilingScraper:
             print(f"  Error getting filings for {ticker}: {e}")
             return []
 
-    def download_filing(self, filing: Dict, save_path: Path) -> bool:
-        """Download a single filing"""
+    def parse_html_to_text(self, html_content: bytes) -> str:
+        """Parse HTML and extract clean text"""
+        try:
+            # Parse HTML
+            soup = BeautifulSoup(html_content, 'lxml')
+
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.decompose()
+
+            # Get text
+            text = soup.get_text()
+
+            # Clean up whitespace
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+
+            return text
+        except Exception as e:
+            print(f"  Error parsing HTML: {e}")
+            return ""
+
+    def download_and_parse_filing(self, filing: Dict) -> Dict:
+        """Download filing and parse to text"""
         try:
             response = requests.get(filing['url'], headers=self.headers)
             time.sleep(REQUEST_DELAY)
 
             if response.status_code == 200:
-                save_path.write_bytes(response.content)
-                return True
+                # Parse HTML to clean text
+                text_content = self.parse_html_to_text(response.content)
+                filing['text_content'] = text_content
+                filing['text_length'] = len(text_content)
+                return filing
             else:
                 print(f"  Failed to download {filing['filename']}: {response.status_code}")
-                return False
+                filing['text_content'] = ""
+                filing['text_length'] = 0
+                return None
 
         except Exception as e:
             print(f"  Error downloading {filing['filename']}: {e}")
-            return False
+            filing['text_content'] = ""
+            filing['text_length'] = 0
+            return None
 
-    def scrape_all(self, years: int = 5) -> List[Dict]:
-        """Scrape all 10-K filings for S&P 500 companies"""
+    def scrape_all(self, years: int = 5) -> pd.DataFrame:
+        """Scrape all 10-K filings for S&P 500 companies and save to CSV"""
         companies = self.get_sp500_companies()
         all_filings = []
         failed_companies = []
@@ -240,31 +272,23 @@ class SECFilingScraper:
                 failed_companies.append(ticker)
                 continue
 
-            # Create company directory
-            company_dir = self.output_dir / ticker
-            company_dir.mkdir(exist_ok=True)
-
-            # Download each filing
+            # Download and parse each filing
             for filing in filings:
-                save_path = company_dir / filing['filename']
+                print(f"  Downloading and parsing {filing['filename']}...")
+                parsed_filing = self.download_and_parse_filing(filing)
 
-                if save_path.exists():
-                    print(f"  Skipping {filing['filename']} (already exists)")
-                    filing['local_path'] = str(save_path)
-                    all_filings.append(filing)
-                    continue
-
-                print(f"  Downloading {filing['filename']}...")
-                if self.download_filing(filing, save_path):
-                    filing['local_path'] = str(save_path)
-                    all_filings.append(filing)
+                if parsed_filing and parsed_filing['text_content']:
+                    all_filings.append(parsed_filing)
+                    print(f"    ✓ Parsed {len(parsed_filing['text_content'])} characters")
                 else:
-                    print(f"  Failed to download {filing['filename']}")
+                    print(f"    ✗ Failed to parse filing")
 
-        # Save metadata
-        metadata_path = self.output_dir / "filings_metadata.json"
-        with open(metadata_path, 'w') as f:
-            json.dump(all_filings, f, indent=2)
+            # Save progress after each company (in case of interruption)
+            if all_filings:
+                self._save_to_csv(all_filings)
+
+        # Final save
+        df = self._save_to_csv(all_filings)
 
         print(f"\n{'='*80}")
         print(f"Scraping complete!")
@@ -272,9 +296,34 @@ class SECFilingScraper:
         print(f"Companies processed: {len(companies) - len(failed_companies)}/{len(companies)}")
 
         if failed_companies:
-            print(f"\nFailed companies ({len(failed_companies)}): {', '.join(failed_companies)}")
+            print(f"\nFailed companies ({len(failed_companies)}): {', '.join(failed_companies[:20])}")
+            if len(failed_companies) > 20:
+                print(f"... and {len(failed_companies) - 20} more")
 
-        return all_filings
+        return df
+
+    def _save_to_csv(self, filings: List[Dict]) -> pd.DataFrame:
+        """Save filings to CSV"""
+        if not filings:
+            return None
+
+        # Create DataFrame
+        df = pd.DataFrame(filings)
+
+        # Reorder columns
+        columns = ['ticker', 'company_name', 'cik', 'filing_date', 'accession_number',
+                   'url', 'text_length', 'text_content']
+
+        # Only keep columns that exist
+        columns = [col for col in columns if col in df.columns]
+        df = df[columns]
+
+        # Save to CSV
+        csv_path = self.output_dir / "sp500_10k_filings.csv"
+        df.to_csv(csv_path, index=False, encoding='utf-8')
+        print(f"\n💾 Saved {len(df)} filings to {csv_path}")
+
+        return df
 
 
 def main():
@@ -298,16 +347,22 @@ def main():
         print("   drive.mount('/content/drive')")
         return
 
-    print(f"\n📁 Saving files to: {GOOGLE_DRIVE_FOLDER}")
+    print(f"\n📁 Saving CSV to: {GOOGLE_DRIVE_FOLDER}")
     print(f"📅 Downloading filings from last {YEARS_TO_DOWNLOAD} years")
-    print(f"👤 User-Agent: {USER_AGENT}\n")
+    print(f"👤 User-Agent: {USER_AGENT}")
+    print(f"📝 Output: Parsed text (HTML tags removed)\n")
 
     # Create scraper and run
     scraper = SECFilingScraper(output_dir=GOOGLE_DRIVE_FOLDER)
-    filings = scraper.scrape_all(years=YEARS_TO_DOWNLOAD)
+    df = scraper.scrape_all(years=YEARS_TO_DOWNLOAD)
 
-    print("\n✅ Done! Files saved to your Google Drive.")
-    print(f"📊 Metadata saved to: {GOOGLE_DRIVE_FOLDER}/filings_metadata.json")
+    if df is not None and len(df) > 0:
+        print("\n✅ Done! CSV file saved to your Google Drive.")
+        print(f"📊 File: {GOOGLE_DRIVE_FOLDER}/sp500_10k_filings.csv")
+        print(f"📈 Total rows: {len(df)}")
+        print(f"📏 Columns: {', '.join(df.columns.tolist())}")
+    else:
+        print("\n⚠️  No filings were successfully downloaded.")
 
 
 if __name__ == "__main__":
