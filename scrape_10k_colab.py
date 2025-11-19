@@ -22,8 +22,9 @@ import re
 # CONFIGURATION - MODIFY THESE VALUES
 # ============================================================================
 
-# Path to your CSV file with company data
-# Example: "/content/drive/MyDrive/company_data.csv"
+# Path to your CSV file OR folder containing CSV files
+# Single file: "/content/drive/MyDrive/company_data.csv"
+# Folder: "/content/drive/MyDrive/MyFolder" (will read ALL .csv files)
 INPUT_CSV_PATH = "/content/drive/MyDrive/YOUR_INPUT_FILE.csv"
 
 # Your Google Drive output folder path (after mounting)
@@ -63,14 +64,40 @@ class SECFilingScraper:
         self.headers = HEADERS.copy()
 
     def load_companies_from_csv(self, csv_path: str) -> pd.DataFrame:
-        """Load company data from user's CSV file"""
+        """Load company data from user's CSV file or folder"""
         print(f"Loading company data from: {csv_path}")
 
         try:
-            # Read the CSV file
-            df = pd.read_csv(csv_path)
+            # Check if path is a directory - if so, read all CSV files
+            if os.path.isdir(csv_path):
+                print(f"📂 Reading all CSV files from folder...")
+                csv_files = [f for f in os.listdir(csv_path) if f.endswith('.csv')]
 
-            print(f"CSV columns found: {df.columns.tolist()}")
+                if not csv_files:
+                    print("⚠️  No CSV files found in directory!")
+                    return None
+
+                print(f"Found {len(csv_files)} CSV file(s):")
+                for f in csv_files:
+                    print(f"  - {f}")
+
+                # Read and combine all CSV files
+                dfs = []
+                for csv_file in csv_files:
+                    file_path = os.path.join(csv_path, csv_file)
+                    print(f"\n  Reading: {csv_file}")
+                    df_temp = pd.read_csv(file_path)
+                    print(f"    Rows: {len(df_temp)}")
+                    dfs.append(df_temp)
+
+                # Combine all dataframes
+                df = pd.concat(dfs, ignore_index=True)
+                print(f"\n✅ Combined total rows: {len(df)}")
+            else:
+                # Read single CSV file
+                df = pd.read_csv(csv_path)
+
+            print(f"\nCSV columns found: {df.columns.tolist()}")
 
             # Map user's columns to standard names
             # User has: company name, form type, cik, date filed, file name
@@ -351,29 +378,8 @@ def main():
 
     # Check if input CSV exists
     if not os.path.exists(INPUT_CSV_PATH):
-        print(f"\n⚠️  ERROR: Input CSV not found: {INPUT_CSV_PATH}")
+        print(f"\n⚠️  ERROR: Input CSV path not found: {INPUT_CSV_PATH}")
         print("   Please check the file path and make sure Drive is mounted.")
-        return
-
-    # Check if user provided a directory instead of a file
-    if os.path.isdir(INPUT_CSV_PATH):
-        print(f"\n⚠️  ERROR: INPUT_CSV_PATH is a directory, not a CSV file!")
-        print(f"   You provided: {INPUT_CSV_PATH}")
-        print("\n   📂 CSV files found in this directory:")
-
-        try:
-            csv_files = [f for f in os.listdir(INPUT_CSV_PATH) if f.endswith('.csv')]
-            if csv_files:
-                for f in csv_files:
-                    full_path = os.path.join(INPUT_CSV_PATH, f)
-                    print(f"      - {f}")
-                print(f"\n   ✏️  Update INPUT_CSV_PATH to include the filename:")
-                print(f"   INPUT_CSV_PATH = \"{os.path.join(INPUT_CSV_PATH, csv_files[0])}\"")
-            else:
-                print("      (No CSV files found in this directory)")
-        except Exception as e:
-            print(f"   Could not list directory: {e}")
-
         return
 
     print(f"\n📂 Reading companies from: {INPUT_CSV_PATH}")
