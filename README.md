@@ -23,29 +23,35 @@ Python script to scrape all 10-K filings from the last 5 years for each current 
 pip install -r requirements.txt
 ```
 
-## Google Drive Setup
+## Google Drive Setup (OAuth - Recommended)
 
-To enable Google Drive upload:
+To enable Google Drive upload with your personal Google account:
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select existing one
-3. Enable Google Drive API
-4. Create a Service Account:
-   - Go to IAM & Admin > Service Accounts
-   - Create Service Account
-   - Download JSON credentials
-5. Save credentials as `credentials.json` in the project directory
-6. Share your target Google Drive folder with the service account email
+3. Enable Google Drive API:
+   - Go to "APIs & Services" > "Library"
+   - Search "Google Drive API" and click "Enable"
+4. Create OAuth 2.0 Credentials:
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth client ID"
+   - Choose "Desktop app" as application type
+   - Name it (e.g., "SEC Scraper")
+   - Click "Create"
+5. Download credentials:
+   - Click the download icon next to your OAuth client
+   - Save as `credentials.json` in the project directory
+6. Run the script - it will open your browser to log in (one-time only)
+
+**Note:** After first login, credentials are saved to `token.json` - you won't need to log in again unless you revoke access
 
 ## Configuration
 
-Before running, update the `USER_AGENT` in `scrape_10k.py`:
+The script is pre-configured with the required USER_AGENT for SEC compliance. If you need to change it, edit `scrape_10k.py`:
 
 ```python
 USER_AGENT = "YourName your.email@example.com"
 ```
-
-SEC requires a valid User-Agent with contact information.
 
 ## Usage
 
@@ -111,13 +117,20 @@ The script respects SEC's rate limit of 10 requests per second with a 0.1s delay
 **No CIK found for ticker:**
 - Some tickers may have changed; the script will skip these
 
+**Google Drive authentication - "Unverified app" warning:**
+- This is normal for OAuth apps in testing mode
+- Click "Advanced" > "Go to [App Name] (unsafe)" to proceed
+- Only your Google account will have access
+
 **Google Drive authentication failed:**
-- Ensure `credentials.json` is in the correct location
-- Verify service account has necessary permissions
+- Ensure `credentials.json` is the OAuth client (Desktop app type)
+- Make sure Google Drive API is enabled
+- Delete `token.json` and try logging in again
 
 **SEC download errors:**
 - SEC servers may be slow; the script will continue with other filings
 - Check your User-Agent is properly configured
+- SEC may block requests from certain IPs (VPNs, cloud servers)
 
 ## License
 

@@ -15,9 +15,12 @@ from typing import List, Dict
 from io import BytesIO
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
+import pickle
 
 # SEC API Configuration
 SEC_API_BASE = "https://data.sec.gov"
@@ -294,33 +297,85 @@ class SECFilingScraper:
 class GoogleDriveUploader:
     """Upload files to Google Drive"""
 
-    def __init__(self, credentials_path: str = "credentials.json"):
+    def __init__(self, credentials_path: str = "credentials.json", token_path: str = "token.json"):
         """
         Initialize Google Drive uploader
 
         Args:
-            credentials_path: Path to Google service account credentials JSON
-                             or OAuth2 credentials file
+            credentials_path: Path to OAuth2 credentials JSON file
+            token_path: Path to save/load OAuth token
         """
         self.credentials_path = credentials_path
+        self.token_path = token_path
         self.service = self._authenticate()
 
     def _authenticate(self):
-        """Authenticate with Google Drive API"""
+        """Authenticate with Google Drive API using OAuth 2.0"""
+        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        creds = None
+
         try:
-            # Try service account authentication first
-            if os.path.exists(self.credentials_path):
-                credentials = service_account.Credentials.from_service_account_file(
-                    self.credentials_path,
-                    scopes=['https://www.googleapis.com/auth/drive.file']
-                )
-                service = build('drive', 'v3', credentials=credentials)
-                print("Authenticated with Google Drive using service account")
-                return service
-            else:
-                print(f"Credentials file not found: {self.credentials_path}")
-                print("Please provide a Google service account credentials JSON file")
-                return None
+            # Check if we have a saved token from previous authentication
+            if os.path.exists(self.token_path):
+                try:
+                    with open(self.token_path, 'rb') as token:
+                        creds = pickle.load(token)
+                    print("Loaded saved Google Drive credentials")
+                except Exception as e:
+                    print(f"Could not load saved token: {e}")
+
+            # If credentials are invalid or don't exist, authenticate
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        print("Refreshing expired credentials...")
+                        creds.refresh(Request())
+                        print("Credentials refreshed successfully")
+                    except Exception as e:
+                        print(f"Could not refresh credentials: {e}")
+                        creds = None
+
+                # If still no valid credentials, run OAuth flow
+                if not creds:
+                    if not os.path.exists(self.credentials_path):
+                        print(f"\nCredentials file not found: {self.credentials_path}")
+                        print("\nTo enable Google Drive upload:")
+                        print("1. Go to Google Cloud Console")
+                        print("2. Enable Google Drive API")
+                        print("3. Create OAuth 2.0 credentials")
+                        print("4. Download as 'credentials.json'")
+                        print("5. Place in this directory")
+                        return None
+
+                    try:
+                        # Try OAuth flow first
+                        print("\nStarting Google Drive authentication...")
+                        print("A browser window will open - please log in and authorize access")
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            self.credentials_path, SCOPES)
+                        creds = flow.run_local_server(port=0)
+                        print("Authentication successful!")
+
+                        # Save credentials for future runs
+                        with open(self.token_path, 'wb') as token:
+                            pickle.dump(creds, token)
+                        print(f"Credentials saved to {self.token_path}")
+
+                    except Exception as oauth_error:
+                        # Fallback to service account if OAuth fails
+                        print(f"\nOAuth failed: {oauth_error}")
+                        print("Trying service account authentication...")
+                        try:
+                            creds = service_account.Credentials.from_service_account_file(
+                                self.credentials_path, scopes=SCOPES)
+                            print("Authenticated with service account")
+                        except Exception as sa_error:
+                            print(f"Service account authentication also failed: {sa_error}")
+                            return None
+
+            # Build and return the service
+            service = build('drive', 'v3', credentials=creds)
+            return service
 
         except Exception as e:
             print(f"Error authenticating with Google Drive: {e}")
