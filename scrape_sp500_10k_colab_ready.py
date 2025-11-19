@@ -6,9 +6,12 @@ This notebook scrapes 10-K filings from S&P 500 companies for the last 5 years.
 
 SETUP INSTRUCTIONS FOR GOOGLE COLAB:
 1. Copy this entire code into a Google Colab notebook
-2. Run the installation cell first (pip install)
-3. Run the main scraper cell
-4. Download the CSV file when complete
+2. Run STEP 1 (pip install packages)
+3. Run STEP 2 (mount Google Drive)
+4. Edit STEP 3: Replace "YOUR_FOLDER_NAME_HERE" with your actual folder name
+5. Run STEP 3 (load the scraper code)
+6. Run STEP 4 (execute the scraper)
+7. Files will be saved to your Google Drive automatically
 
 """
 
@@ -20,7 +23,15 @@ SETUP INSTRUCTIONS FOR GOOGLE COLAB:
 """
 
 # ============================================================================
-# STEP 2: Run this cell to scrape 10-K filings
+# STEP 2: Mount Google Drive (run this cell to connect your Google Drive)
+# ============================================================================
+"""
+from google.colab import drive
+drive.mount('/content/drive')
+"""
+
+# ============================================================================
+# STEP 3: Run this cell to scrape 10-K filings
 # ============================================================================
 
 import os
@@ -34,11 +45,15 @@ from bs4 import BeautifulSoup
 import traceback
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION - INSERT YOUR GOOGLE DRIVE PATH HERE
 # ============================================================================
 
-# Output directory (Colab will save to /content/)
-OUTPUT_DIR = "/content/sp500_10k_output"
+# OPTION 1: Save to Google Drive (RECOMMENDED - files persist after session)
+# Replace with your Google Drive folder path:
+OUTPUT_DIR = "/content/drive/MyDrive/YOUR_FOLDER_NAME_HERE/sp500_10k_output"
+
+# OPTION 2: Save to Colab temporary storage (files deleted when session ends)
+# OUTPUT_DIR = "/content/sp500_10k_output"
 
 # SEC requires contact info in User-Agent (format: Name email@domain.com)
 USER_AGENT = "Reagan Schluter reaganschluter18@gmail.com"
@@ -453,15 +468,15 @@ def main(max_companies: int = None):
 
 
 # ============================================================================
-# RUN THE SCRAPER
+# STEP 4: RUN THE SCRAPER (Choose one option below)
 # ============================================================================
 
 if __name__ == "__main__":
-    # OPTION 1: Test with just 5 companies first (recommended)
+    # OPTION A: Test with just 5 companies first (RECOMMENDED - takes ~5 minutes)
     print("Starting test run with 5 companies...")
     df = main(max_companies=5)
 
-    # OPTION 2: Uncomment below to scrape ALL S&P 500 companies (takes 3-6 hours)
+    # OPTION B: Uncomment below to scrape ALL S&P 500 companies (takes 3-6 hours)
     # print("Starting full scrape of all S&P 500 companies...")
     # df = main()
 
@@ -472,14 +487,7 @@ if __name__ == "__main__":
         print("="*80)
         print(df[['ticker', 'company_name', 'filing_date', 'text_length']].head(10))
 
-        # Download file in Colab
-        try:
-            from google.colab import files
-            print("\n" + "="*80)
-            print("Download CSV File:")
-            print("="*80)
-            csv_path = f'{OUTPUT_DIR}/sp500_10k_filings.csv'
-            print(f"Downloading: {csv_path}")
-            files.download(csv_path)
-        except ImportError:
-            print(f"\nFile saved to: {OUTPUT_DIR}/sp500_10k_filings.csv")
+        print("\n" + "="*80)
+        print(f"✅ File saved to your Google Drive:")
+        print(f"📁 {OUTPUT_DIR}/sp500_10k_filings.csv")
+        print("="*80)
