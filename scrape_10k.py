@@ -22,7 +22,7 @@ from googleapiclient.errors import HttpError
 # SEC API Configuration
 SEC_API_BASE = "https://data.sec.gov"
 EDGAR_ARCHIVES = "https://www.sec.gov/cgi-bin/browse-edgar"
-USER_AGENT = "YourName your.email@example.com"  # REQUIRED: Update with your info
+USER_AGENT = "Reagan reaganschluter18@gmail.com"
 HEADERS = {
     "User-Agent": USER_AGENT,
     "Accept-Encoding": "gzip, deflate",
@@ -44,28 +44,74 @@ class SECFilingScraper:
     def get_sp500_companies(self) -> pd.DataFrame:
         """Get list of current S&P 500 companies from Wikipedia"""
         print("Fetching S&P 500 companies list...")
-        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
-        try:
-            tables = pd.read_html(url)
-            df = tables[0]
+        # Try alternative source: GitHub raw file
+        urls = [
+            "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv",
+            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        ]
 
-            # Clean up the dataframe
-            df.columns = df.columns.str.strip()
+        for url in urls:
+            try:
+                if url.endswith('.csv'):
+                    # Try CSV source first
+                    print(f"Trying CSV source...")
+                    df = pd.read_csv(url)
 
-            # Get ticker and company name, handle CIK if available
-            companies = df[['Symbol', 'Security']].copy()
-            companies.columns = ['ticker', 'company_name']
+                    # Standardize column names
+                    if 'Symbol' in df.columns and 'Security' in df.columns:
+                        if 'CIK' in df.columns:
+                            companies = df[['Symbol', 'Security', 'CIK']].copy()
+                            companies.columns = ['ticker', 'company_name', 'cik']
+                            # Pad CIK to 10 digits
+                            companies['cik'] = companies['cik'].astype(str).str.zfill(10)
+                        else:
+                            companies = df[['Symbol', 'Security']].copy()
+                            companies.columns = ['ticker', 'company_name']
+                            companies['cik'] = None
+                    elif 'Symbol' in df.columns and 'Name' in df.columns:
+                        companies = df[['Symbol', 'Name']].copy()
+                        companies.columns = ['ticker', 'company_name']
+                        companies['cik'] = None
+                    else:
+                        companies = df.iloc[:, [0, 1]].copy()
+                        companies.columns = ['ticker', 'company_name']
+                        companies['cik'] = None
 
-            # Clean tickers (remove any special characters)
-            companies['ticker'] = companies['ticker'].str.replace('.', '-')
+                    # Clean tickers
+                    companies['ticker'] = companies['ticker'].str.replace('.', '-')
 
-            print(f"Found {len(companies)} S&P 500 companies")
-            return companies
+                    print(f"Found {len(companies)} S&P 500 companies")
+                    return companies
 
-        except Exception as e:
-            print(f"Error fetching S&P 500 list: {e}")
-            raise
+                else:
+                    # Try Wikipedia with headers
+                    print(f"Trying Wikipedia source...")
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    }
+
+                    response = requests.get(url, headers=headers)
+                    response.raise_for_status()
+
+                    tables = pd.read_html(response.text)
+                    df = tables[0]
+
+                    df.columns = df.columns.str.strip()
+                    companies = df[['Symbol', 'Security']].copy()
+                    companies.columns = ['ticker', 'company_name']
+                    companies['ticker'] = companies['ticker'].str.replace('.', '-')
+
+                    print(f"Found {len(companies)} S&P 500 companies")
+                    return companies
+
+            except Exception as e:
+                print(f"  Failed with {url}: {e}")
+                continue
+
+        # If all sources fail, raise error
+        raise Exception("Could not fetch S&P 500 companies list from any source")
 
     def get_cik_for_ticker(self, ticker: str) -> str:
         """Get CIK (Central Index Key) for a ticker symbol"""
@@ -100,7 +146,11 @@ class SECFilingScraper:
         try:
             # Use SEC submissions API
             url = f"https://data.sec.gov/submissions/CIK{cik}.json"
-            headers = {"User-Agent": USER_AGENT}
+            headers = {
+                "User-Agent": USER_AGENT,
+                "Accept-Encoding": "gzip, deflate",
+                "Host": "data.sec.gov"
+            }
 
             response = requests.get(url, headers=headers)
             time.sleep(REQUEST_DELAY)
@@ -186,8 +236,11 @@ class SECFilingScraper:
 
             print(f"\n[{idx+1}/{len(companies)}] Processing {ticker} - {company_name}")
 
-            # Get CIK
-            cik = self.get_cik_for_ticker(ticker)
+            # Get CIK from dataframe or API
+            cik = row.get('cik', None) if 'cik' in row and pd.notna(row.get('cik')) else None
+
+            if not cik:
+                cik = self.get_cik_for_ticker(ticker)
 
             if not cik:
                 print(f"  Could not find CIK for {ticker}")
