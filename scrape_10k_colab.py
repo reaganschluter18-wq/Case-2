@@ -29,7 +29,7 @@ INPUT_CSV_PATH = "/content/drive/MyDrive/Teaching/Texas/2025 Fall/Data/Staged Da
 
 # Your Google Drive output folder path (after mounting)
 # Example: "/content/drive/MyDrive/SEC_Filings_Output"
-GOOGLE_DRIVE_FOLDER = "/content/drive/MyDrive/YOUR_OUTPUT_FOLDER_HERE"
+GOOGLE_DRIVE_FOLDER = "/content/drive/MyDrive/ACC 380K Case 2"
 
 # SEC requires contact info in User-Agent
 USER_AGENT = "Reagan reaganschluter18@gmail.com"
