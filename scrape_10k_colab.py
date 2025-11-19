@@ -1,6 +1,7 @@
 """
 S&P 500 10-K Filings Scraper for Google Colab
 Scrapes 10-K filings from SEC EDGAR and saves to Google Drive as CSV
+Reads company list from your existing CSV file
 """
 
 # Install required packages (run this cell first in Colab)
@@ -21,9 +22,13 @@ import re
 # CONFIGURATION - MODIFY THESE VALUES
 # ============================================================================
 
-# Your Google Drive folder path (after mounting)
-# Example: "/content/drive/MyDrive/SEC_Filings"
-GOOGLE_DRIVE_FOLDER = "/content/drive/MyDrive/YOUR_FOLDER_NAME_HERE"
+# Path to your CSV file with company data
+# Example: "/content/drive/MyDrive/company_data.csv"
+INPUT_CSV_PATH = "/content/drive/MyDrive/YOUR_INPUT_FILE.csv"
+
+# Your Google Drive output folder path (after mounting)
+# Example: "/content/drive/MyDrive/SEC_Filings_Output"
+GOOGLE_DRIVE_FOLDER = "/content/drive/MyDrive/YOUR_OUTPUT_FOLDER_HERE"
 
 # SEC requires contact info in User-Agent
 USER_AGENT = "Reagan reaganschluter18@gmail.com"
@@ -57,85 +62,71 @@ class SECFilingScraper:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.headers = HEADERS.copy()
 
-    def get_sp500_companies(self) -> pd.DataFrame:
-        """Get list of current S&P 500 companies"""
-        print("Fetching S&P 500 companies list...")
+    def load_companies_from_csv(self, csv_path: str) -> pd.DataFrame:
+        """Load company data from user's CSV file"""
+        print(f"Loading company data from: {csv_path}")
 
-        # Try CSV source with CIK data
-        urls = [
-            "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv",
-            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        ]
-
-        for url in urls:
-            try:
-                if url.endswith('.csv'):
-                    print(f"Trying CSV source...")
-                    df = pd.read_csv(url)
-
-                    # Get columns with CIK if available
-                    if 'Symbol' in df.columns and 'Security' in df.columns:
-                        if 'CIK' in df.columns:
-                            companies = df[['Symbol', 'Security', 'CIK']].copy()
-                            companies.columns = ['ticker', 'company_name', 'cik']
-                            companies['cik'] = companies['cik'].astype(str).str.zfill(10)
-                        else:
-                            companies = df[['Symbol', 'Security']].copy()
-                            companies.columns = ['ticker', 'company_name']
-                            companies['cik'] = None
-                    else:
-                        companies = df.iloc[:, [0, 1]].copy()
-                        companies.columns = ['ticker', 'company_name']
-                        companies['cik'] = None
-
-                    companies['ticker'] = companies['ticker'].str.replace('.', '-')
-                    print(f"Found {len(companies)} S&P 500 companies")
-                    return companies
-
-                else:
-                    # Try Wikipedia
-                    print(f"Trying Wikipedia source...")
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                    response = requests.get(url, headers=headers)
-                    response.raise_for_status()
-
-                    tables = pd.read_html(response.text)
-                    df = tables[0]
-                    df.columns = df.columns.str.strip()
-                    companies = df[['Symbol', 'Security']].copy()
-                    companies.columns = ['ticker', 'company_name']
-                    companies['ticker'] = companies['ticker'].str.replace('.', '-')
-
-                    print(f"Found {len(companies)} S&P 500 companies")
-                    return companies
-
-            except Exception as e:
-                print(f"  Failed with {url}: {e}")
-                continue
-
-        raise Exception("Could not fetch S&P 500 companies list")
-
-    def get_cik_for_ticker(self, ticker: str) -> str:
-        """Get CIK (Central Index Key) for a ticker symbol"""
         try:
-            url = "https://www.sec.gov/files/company_tickers.json"
-            headers = {"User-Agent": USER_AGENT}
+            # Read the CSV file
+            df = pd.read_csv(csv_path)
 
-            response = requests.get(url, headers=headers)
-            time.sleep(REQUEST_DELAY)
+            print(f"CSV columns found: {df.columns.tolist()}")
 
-            if response.status_code == 200:
-                data = response.json()
-                for entry in data.values():
-                    if entry['ticker'].upper() == ticker.upper():
-                        cik = str(entry['cik']).zfill(10)
-                        return cik
-            return None
+            # Map user's columns to standard names
+            # User has: company name, form type, cik, date filed, file name
+            column_mapping = {}
+
+            for col in df.columns:
+                col_lower = col.lower().strip()
+                if 'company' in col_lower and 'name' in col_lower:
+                    column_mapping[col] = 'company_name'
+                elif 'cik' in col_lower:
+                    column_mapping[col] = 'cik'
+                elif 'form' in col_lower and 'type' in col_lower:
+                    column_mapping[col] = 'form_type'
+                elif 'date' in col_lower and 'filed' in col_lower:
+                    column_mapping[col] = 'date_filed'
+                elif 'file' in col_lower and 'name' in col_lower:
+                    column_mapping[col] = 'file_name'
+
+            # Rename columns
+            df = df.rename(columns=column_mapping)
+
+            # Ensure we have required columns
+            if 'company_name' not in df.columns or 'cik' not in df.columns:
+                print("\n⚠️  ERROR: CSV must have 'company name' and 'cik' columns!")
+                return None
+
+            # Standardize CIK format (pad to 10 digits)
+            df['cik'] = df['cik'].astype(str).str.zfill(10)
+
+            # Extract ticker from company name if possible (fallback)
+            # We'll try to extract ticker from file_name or use company_name
+            if 'file_name' in df.columns:
+                df['ticker'] = df['file_name'].str.extract(r'^([A-Z]+)', expand=False)
+
+            if 'ticker' not in df.columns or df['ticker'].isna().all():
+                # Use first word of company name as ticker fallback
+                df['ticker'] = df['company_name'].str.split().str[0].str.upper()
+
+            # Filter for 10-K forms only if form_type column exists
+            if 'form_type' in df.columns:
+                df = df[df['form_type'].str.contains('10-K', case=False, na=False)]
+                print(f"Filtered to {len(df)} 10-K entries")
+
+            # Get unique companies (in case there are multiple filings per company)
+            companies = df[['ticker', 'company_name', 'cik']].drop_duplicates(subset=['cik'])
+
+            print(f"Found {len(companies)} unique companies to process")
+            print(f"\nSample companies:")
+            print(companies.head())
+
+            return companies
 
         except Exception as e:
-            print(f"Error getting CIK for {ticker}: {e}")
+            print(f"Error loading CSV: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_10k_filings(self, cik: str, ticker: str, years: int = 5) -> List[Dict]:
@@ -182,6 +173,7 @@ class SECFilingScraper:
 
                         filings.append({
                             'ticker': ticker,
+                            'company_name': '',  # Will be filled in later
                             'cik': cik,
                             'form': forms[i],
                             'filing_date': filing_dates[i],
@@ -244,29 +236,31 @@ class SECFilingScraper:
             filing['text_length'] = 0
             return None
 
-    def scrape_all(self, years: int = 5) -> pd.DataFrame:
-        """Scrape all 10-K filings for S&P 500 companies and save to CSV"""
-        companies = self.get_sp500_companies()
+    def scrape_all(self, csv_path: str, years: int = 5) -> pd.DataFrame:
+        """Scrape all 10-K filings for companies from CSV and save to CSV"""
+        # Load companies from user's CSV
+        companies = self.load_companies_from_csv(csv_path)
+
+        if companies is None or len(companies) == 0:
+            print("No companies loaded from CSV!")
+            return None
+
         all_filings = []
         failed_companies = []
 
         for idx, row in companies.iterrows():
             ticker = row['ticker']
             company_name = row['company_name']
+            cik = row['cik']
 
             print(f"\n[{idx+1}/{len(companies)}] Processing {ticker} - {company_name}")
 
-            # Get CIK from dataframe or API
-            cik = row.get('cik', None) if 'cik' in row and pd.notna(row.get('cik')) else None
-            if not cik:
-                cik = self.get_cik_for_ticker(ticker)
-
-            if not cik:
-                print(f"  Could not find CIK for {ticker}")
+            if not cik or pd.isna(cik):
+                print(f"  No CIK found for {ticker}")
                 failed_companies.append(ticker)
                 continue
 
-            # Get filings
+            # Get filings from EDGAR
             filings = self.get_10k_filings(cik, ticker, years)
             if not filings:
                 failed_companies.append(ticker)
@@ -274,12 +268,13 @@ class SECFilingScraper:
 
             # Download and parse each filing
             for filing in filings:
+                filing['company_name'] = company_name
                 print(f"  Downloading and parsing {filing['filename']}...")
                 parsed_filing = self.download_and_parse_filing(filing)
 
                 if parsed_filing and parsed_filing['text_content']:
                     all_filings.append(parsed_filing)
-                    print(f"    ✓ Parsed {len(parsed_filing['text_content'])} characters")
+                    print(f"    ✓ Parsed {len(parsed_filing['text_content']):,} characters")
                 else:
                     print(f"    ✗ Failed to parse filing")
 
@@ -332,8 +327,15 @@ def main():
     print("S&P 500 10-K Filings Scraper for Google Colab")
     print("="*80)
 
+    # Check if input CSV is configured
+    if "YOUR_INPUT_FILE.csv" in INPUT_CSV_PATH:
+        print("\n⚠️  ERROR: Please configure INPUT_CSV_PATH at the top of the script!")
+        print(f"   Current value: {INPUT_CSV_PATH}")
+        print("\n   Example: INPUT_CSV_PATH = '/content/drive/MyDrive/company_data.csv'")
+        return
+
     # Check if Google Drive folder is configured
-    if "YOUR_FOLDER_NAME_HERE" in GOOGLE_DRIVE_FOLDER:
+    if "YOUR_OUTPUT_FOLDER_HERE" in GOOGLE_DRIVE_FOLDER:
         print("\n⚠️  ERROR: Please configure GOOGLE_DRIVE_FOLDER at the top of the script!")
         print(f"   Current value: {GOOGLE_DRIVE_FOLDER}")
         print("\n   Example: GOOGLE_DRIVE_FOLDER = '/content/drive/MyDrive/SEC_Filings'")
@@ -347,14 +349,21 @@ def main():
         print("   drive.mount('/content/drive')")
         return
 
-    print(f"\n📁 Saving CSV to: {GOOGLE_DRIVE_FOLDER}")
+    # Check if input CSV exists
+    if not os.path.exists(INPUT_CSV_PATH):
+        print(f"\n⚠️  ERROR: Input CSV not found: {INPUT_CSV_PATH}")
+        print("   Please check the file path and make sure Drive is mounted.")
+        return
+
+    print(f"\n📂 Reading companies from: {INPUT_CSV_PATH}")
+    print(f"📁 Saving CSV to: {GOOGLE_DRIVE_FOLDER}")
     print(f"📅 Downloading filings from last {YEARS_TO_DOWNLOAD} years")
     print(f"👤 User-Agent: {USER_AGENT}")
     print(f"📝 Output: Parsed text (HTML tags removed)\n")
 
     # Create scraper and run
     scraper = SECFilingScraper(output_dir=GOOGLE_DRIVE_FOLDER)
-    df = scraper.scrape_all(years=YEARS_TO_DOWNLOAD)
+    df = scraper.scrape_all(csv_path=INPUT_CSV_PATH, years=YEARS_TO_DOWNLOAD)
 
     if df is not None and len(df) > 0:
         print("\n✅ Done! CSV file saved to your Google Drive.")
