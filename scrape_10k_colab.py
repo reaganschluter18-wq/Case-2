@@ -355,6 +355,27 @@ def main():
         print("   Please check the file path and make sure Drive is mounted.")
         return
 
+    # Check if user provided a directory instead of a file
+    if os.path.isdir(INPUT_CSV_PATH):
+        print(f"\n⚠️  ERROR: INPUT_CSV_PATH is a directory, not a CSV file!")
+        print(f"   You provided: {INPUT_CSV_PATH}")
+        print("\n   📂 CSV files found in this directory:")
+
+        try:
+            csv_files = [f for f in os.listdir(INPUT_CSV_PATH) if f.endswith('.csv')]
+            if csv_files:
+                for f in csv_files:
+                    full_path = os.path.join(INPUT_CSV_PATH, f)
+                    print(f"      - {f}")
+                print(f"\n   ✏️  Update INPUT_CSV_PATH to include the filename:")
+                print(f"   INPUT_CSV_PATH = \"{os.path.join(INPUT_CSV_PATH, csv_files[0])}\"")
+            else:
+                print("      (No CSV files found in this directory)")
+        except Exception as e:
+            print(f"   Could not list directory: {e}")
+
+        return
+
     print(f"\n📂 Reading companies from: {INPUT_CSV_PATH}")
     print(f"📁 Saving CSV to: {GOOGLE_DRIVE_FOLDER}")
     print(f"📅 Downloading filings from last {YEARS_TO_DOWNLOAD} years")
