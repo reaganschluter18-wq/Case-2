@@ -25,7 +25,7 @@ import re
 # Path to your CSV file OR folder containing CSV files
 # Single file: "/content/drive/MyDrive/company_data.csv"
 # Folder: "/content/drive/MyDrive/MyFolder" (will read ALL .csv files)
-INPUT_CSV_PATH = "/content/drive/MyDrive/YOUR_INPUT_FILE.csv"
+INPUT_CSV_PATH = "/content/drive/MyDrive/Teaching/Texas/2025 Fall/Data/Staged Data/EDGAR/Index Files/index_Y2024_Q4.csv"
 
 # Your Google Drive output folder path (after mounting)
 # Example: "/content/drive/MyDrive/SEC_Filings_Output"
