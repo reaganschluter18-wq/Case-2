@@ -242,25 +242,28 @@ class SECFilingScraper:
     def download_and_parse_filing(self, filing: Dict) -> Dict:
         """Download filing and parse to text"""
         try:
+            print(f"    Requesting: {filing['url']}")
             response = requests.get(filing['url'], headers=self.headers)
             time.sleep(REQUEST_DELAY)
 
             if response.status_code == 200:
+                print(f"    ✓ Download successful ({len(response.content):,} bytes)")
                 # Parse HTML to clean text
                 text_content = self.parse_html_to_text(response.content)
                 filing['text_content'] = text_content
                 filing['text_length'] = len(text_content)
+
+                if not text_content:
+                    print(f"    ⚠️  Warning: Parsed text is empty!")
+                    return None
+
                 return filing
             else:
-                print(f"  Failed to download {filing['filename']}: {response.status_code}")
-                filing['text_content'] = ""
-                filing['text_length'] = 0
+                print(f"    ✗ Failed to download: HTTP {response.status_code}")
                 return None
 
         except Exception as e:
-            print(f"  Error downloading {filing['filename']}: {e}")
-            filing['text_content'] = ""
-            filing['text_length'] = 0
+            print(f"    ✗ Error downloading: {e}")
             return None
 
     def scrape_all(self, csv_path: str, years: int = 5) -> pd.DataFrame:
@@ -302,12 +305,16 @@ class SECFilingScraper:
                 if parsed_filing and parsed_filing['text_content']:
                     all_filings.append(parsed_filing)
                     print(f"    ✓ Parsed {len(parsed_filing['text_content']):,} characters")
+                    print(f"    📊 Total filings collected so far: {len(all_filings)}")
                 else:
                     print(f"    ✗ Failed to parse filing")
 
             # Save progress after each company (in case of interruption)
             if all_filings:
+                print(f"\n💾 Saving progress... ({len(all_filings)} filings total)")
                 self._save_to_csv(all_filings)
+            else:
+                print(f"\n⚠️  Warning: No filings to save yet!")
 
         # Final save
         df = self._save_to_csv(all_filings)
@@ -327,7 +334,10 @@ class SECFilingScraper:
     def _save_to_csv(self, filings: List[Dict]) -> pd.DataFrame:
         """Save filings to CSV"""
         if not filings:
+            print("⚠️  No filings to save!")
             return None
+
+        print(f"\n💾 Saving {len(filings)} filings to CSV...")
 
         # Create DataFrame
         df = pd.DataFrame(filings)
@@ -340,10 +350,17 @@ class SECFilingScraper:
         columns = [col for col in columns if col in df.columns]
         df = df[columns]
 
-        # Save to CSV
+        # Save to CSV with explicit flushing
         csv_path = self.output_dir / "sp500_10k_filings.csv"
-        df.to_csv(csv_path, index=False, encoding='utf-8')
-        print(f"\n💾 Saved {len(df)} filings to {csv_path}")
+
+        # Write and explicitly flush
+        with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+            df.to_csv(f, index=False)
+            f.flush()  # Ensure data is written to disk
+            os.fsync(f.fileno())  # Force write to disk (important for Drive)
+
+        print(f"✅ Successfully saved {len(df)} filings to: {csv_path}")
+        print(f"   File size: {os.path.getsize(csv_path):,} bytes")
 
         return df
 
