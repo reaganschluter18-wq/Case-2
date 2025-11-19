@@ -275,8 +275,31 @@ class SECFilingScraper:
             print("No companies loaded from CSV!")
             return None
 
-        all_filings = []
+        # Load existing filings if CSV already exists (for resume capability)
+        existing_filings = []
+        existing_keys = set()
+        output_csv = self.output_dir / "sp500_10k_filings.csv"
+
+        if output_csv.exists():
+            print(f"\n📋 Found existing CSV file, loading to avoid re-downloading...")
+            try:
+                existing_df = pd.read_csv(output_csv)
+                existing_filings = existing_df.to_dict('records')
+                # Create unique keys: ticker_filingdate_accession
+                for filing in existing_filings:
+                    key = f"{filing.get('ticker', '')}_{filing.get('filing_date', '')}_{filing.get('accession_number', '')}"
+                    existing_keys.add(key)
+                print(f"   Loaded {len(existing_filings)} existing filings")
+                print(f"   These will be skipped during download\n")
+            except Exception as e:
+                print(f"   Warning: Could not load existing CSV: {e}")
+                existing_filings = []
+                existing_keys = set()
+
+        all_filings = existing_filings.copy()  # Start with existing filings
         failed_companies = []
+        newly_downloaded = 0
+        skipped_count = 0
 
         for idx, row in companies.iterrows():
             ticker = row['ticker']
@@ -299,13 +322,23 @@ class SECFilingScraper:
             # Download and parse each filing
             for filing in filings:
                 filing['company_name'] = company_name
+
+                # Check if this filing already exists
+                filing_key = f"{filing['ticker']}_{filing['filing_date']}_{filing['accession_number']}"
+                if filing_key in existing_keys:
+                    print(f"  ⏭️  Skipping {filing['filename']} (already downloaded)")
+                    skipped_count += 1
+                    continue
+
                 print(f"  Downloading and parsing {filing['filename']}...")
                 parsed_filing = self.download_and_parse_filing(filing)
 
                 if parsed_filing and parsed_filing['text_content']:
                     all_filings.append(parsed_filing)
+                    existing_keys.add(filing_key)  # Add to set to avoid duplicates
+                    newly_downloaded += 1
                     print(f"    ✓ Parsed {len(parsed_filing['text_content']):,} characters")
-                    print(f"    📊 Total filings collected so far: {len(all_filings)}")
+                    print(f"    📊 Total filings: {len(all_filings)} ({newly_downloaded} new, {skipped_count} skipped)")
                 else:
                     print(f"    ✗ Failed to parse filing")
 
@@ -321,7 +354,9 @@ class SECFilingScraper:
 
         print(f"\n{'='*80}")
         print(f"Scraping complete!")
-        print(f"Total filings downloaded: {len(all_filings)}")
+        print(f"Total filings in CSV: {len(all_filings)}")
+        print(f"  - Newly downloaded: {newly_downloaded}")
+        print(f"  - Skipped (already existed): {skipped_count}")
         print(f"Companies processed: {len(companies) - len(failed_companies)}/{len(companies)}")
 
         if failed_companies:
