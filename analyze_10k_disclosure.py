@@ -33,7 +33,7 @@ warnings.filterwarnings('ignore')
 # ============================================================================
 # Option 1: For Google Colab - Put your Google Drive path here after mounting
 # Example: CLEANED_DATA_PATH = "/content/drive/MyDrive/10K_Data/cleaned_10k_data.csv"
-CLEANED_DATA_PATH = None
+CLEANED_DATA_PATH = "/content/drive/MyDrive/ACC 380K Case 2/Clean/sp500_10k_filings_CLEAN.csv"
 
 # Option 2: For local files - Put your local file path here
 # Example: CLEANED_DATA_PATH = "/home/user/Case-2/cleaned_10k_data.csv"
