@@ -385,24 +385,16 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("📝 GOOGLE COLAB INSTRUCTIONS")
     print("="*80)
-    print("""
-To use this script in Google Colab:
-
-1. Mount your Google Drive:
-   from google.colab import drive
-   drive.mount('/content/drive')
-
-2. Run this script:
-   !python analyze_10k_length_trends_colab.py
-
-   OR run it directly in a cell:
-   exec(open('analyze_10k_length_trends_colab.py').read())
-
-3. The graphs will appear above in the output!
-
-4. To save the graph as an image, right-click and select "Save image as..."
-
-The data will be automatically loaded from:
-""")
+    print("\nTo use this script in Google Colab:")
+    print("\n1. Mount your Google Drive:")
+    print("   from google.colab import drive")
+    print("   drive.mount('/content/drive')")
+    print("\n2. Run this script:")
+    print("   !python analyze_10k_length_trends_colab.py")
+    print("\n   OR run it directly in a cell:")
+    print("   exec(open('analyze_10k_length_trends_colab.py').read())")
+    print("\n3. The graphs will appear above in the output!")
+    print("\n4. To save the graph as an image, right-click and select 'Save image as...'")
+    print("\nThe data will be automatically loaded from:")
     print(f"  {DATA_PATH}")
     print("\n" + "="*80 + "\n")
