@@ -28,6 +28,23 @@ import re
 import warnings
 warnings.filterwarnings('ignore')
 
+# ============================================================================
+# CONFIGURATION - PUT YOUR CLEAN DATA PATH HERE
+# ============================================================================
+# Option 1: For Google Colab - Put your Google Drive path here after mounting
+# Example: CLEANED_DATA_PATH = "/content/drive/MyDrive/10K_Data/cleaned_10k_data.csv"
+CLEANED_DATA_PATH = None
+
+# Option 2: For local files - Put your local file path here
+# Example: CLEANED_DATA_PATH = "/home/user/Case-2/cleaned_10k_data.csv"
+# CLEANED_DATA_PATH = None
+
+# Option 3: For Google Drive shareable links (Colab only)
+# If you have a shareable link, use gdown to download it first:
+# !pip install gdown
+# !gdown --id YOUR_FILE_ID -O /content/cleaned_data.csv
+# Then set: CLEANED_DATA_PATH = "/content/cleaned_data.csv"
+
 # Try to import optional libraries
 try:
     import textstat
@@ -736,8 +753,15 @@ def main():
     """Main execution function"""
     import sys
 
-    # Check for input CSV
-    if len(sys.argv) > 1:
+    # Check for input CSV - Priority order:
+    # 1. CLEANED_DATA_PATH configuration
+    # 2. Command line argument
+    # 3. Auto-detect CSV in current directory
+
+    if CLEANED_DATA_PATH is not None:
+        input_csv = CLEANED_DATA_PATH
+        print(f"Using configured data path: {input_csv}\n")
+    elif len(sys.argv) > 1:
         input_csv = sys.argv[1]
     else:
         # Try to find CSV in current directory
@@ -747,6 +771,7 @@ def main():
             print(f"Found CSV file: {input_csv}")
         else:
             print("Usage: python analyze_10k_disclosure.py <input_csv>")
+            print("\nOR set CLEANED_DATA_PATH in the configuration section at the top of this file.")
             print("\nNo 10-K CSV files found in current directory.")
             print("Please provide path to your 10-K data CSV file.")
             return
@@ -754,6 +779,9 @@ def main():
     # Check if file exists
     if not Path(input_csv).exists():
         print(f"Error: File not found: {input_csv}")
+        print("\nMake sure to:")
+        print("1. Set CLEANED_DATA_PATH at the top of this file, OR")
+        print("2. Provide the correct file path as a command line argument")
         return
 
     # Run analysis
