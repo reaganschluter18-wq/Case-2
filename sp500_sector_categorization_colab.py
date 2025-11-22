@@ -65,26 +65,15 @@ class SP500SectorCategorizer:
             self.output_dir = Path("./sp500_sectors_output")
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def fetch_sp500_with_sectors(self, csv_path: str = None) -> pd.DataFrame:
+    def fetch_sp500_sectors_from_wikipedia(self) -> pd.DataFrame:
         """
-        Fetch S&P 500 companies with sector information
-
-        Args:
-            csv_path: Optional path to a CSV file with S&P 500 data
-                     If provided, will read from this file instead of fetching online
+        Fetch S&P 500 companies with sector information from Wikipedia
 
         Returns:
             DataFrame with columns: Symbol, Security, GICS Sector, GICS Sub-Industry
         """
-        if csv_path and os.path.exists(csv_path):
-            print(f"📂 Reading data from: {csv_path}")
-            df = pd.read_csv(csv_path)
-            print(f"✓ Loaded {len(df)} companies from file")
-            return df
+        print("🌐 Fetching S&P 500 sector data from Wikipedia...")
 
-        print("🌐 Fetching S&P 500 data from Wikipedia...")
-
-        # Try Wikipedia first (most comprehensive, includes sectors)
         try:
             url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
             headers = {
@@ -100,12 +89,61 @@ class SP500SectorCategorizer:
             # Clean column names
             df.columns = df.columns.str.strip()
 
-            print(f"✓ Successfully fetched {len(df)} S&P 500 companies")
+            print(f"✓ Successfully fetched {len(df)} S&P 500 companies with sector data")
             return df
 
         except Exception as e:
             print(f"✗ Failed to fetch from Wikipedia: {e}")
-            raise Exception("Could not fetch S&P 500 data. Please provide a CSV file path instead.")
+            raise Exception("Could not fetch S&P 500 sector data from Wikipedia")
+
+    def merge_with_sector_data(self, data_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Merge your data with S&P 500 sector information
+
+        Args:
+            data_df: Your DataFrame with company data (must have 'ticker' or 'Symbol' column)
+
+        Returns:
+            DataFrame with sector information merged in
+        """
+        # Fetch sector data from Wikipedia
+        sector_df = self.fetch_sp500_sectors_from_wikipedia()
+
+        # Identify ticker column in user's data
+        ticker_col = None
+        for col in data_df.columns:
+            if col.lower() in ['ticker', 'symbol']:
+                ticker_col = col
+                break
+
+        if not ticker_col:
+            raise ValueError(f"Could not find ticker/symbol column. Available columns: {', '.join(data_df.columns.tolist())}")
+
+        print(f"\n🔗 Merging data using '{ticker_col}' column...")
+
+        # Standardize ticker column name for merging
+        data_df = data_df.copy()
+        data_df['Symbol'] = data_df[ticker_col].str.upper()
+
+        # Standardize Wikipedia ticker column
+        sector_df['Symbol'] = sector_df['Symbol'].str.upper()
+
+        # Merge the dataframes
+        merged_df = data_df.merge(
+            sector_df[['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']],
+            on='Symbol',
+            how='left'
+        )
+
+        # Check merge success
+        matched = merged_df['GICS Sector'].notna().sum()
+        total = len(merged_df)
+        print(f"✓ Matched {matched}/{total} records with sector data ({matched/total*100:.1f}%)")
+
+        if matched == 0:
+            raise ValueError("No records were matched with sector data. Please check ticker symbols.")
+
+        return merged_df
 
     def categorize_by_sector(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
@@ -160,12 +198,28 @@ class SP500SectorCategorizer:
         for sector, companies_df in sorted_sectors:
             count = len(companies_df)
             percentage = (count / total_companies) * 100
+
+            # Find ticker/symbol column for examples
+            ticker_col = 'Symbol'
+            if ticker_col not in companies_df.columns:
+                for col in companies_df.columns:
+                    if col.lower() in ['ticker', 'symbol']:
+                        ticker_col = col
+                        break
+
+            # Get unique companies for examples
+            if ticker_col in companies_df.columns:
+                unique_tickers = companies_df[ticker_col].unique()[:5]
+                examples = ', '.join([str(t) for t in unique_tickers])
+            else:
+                examples = "N/A"
+
             print(f"\n{sector}")
-            print(f"  Companies: {count} ({percentage:.1f}%)")
-            print(f"  Examples: {', '.join(companies_df['Symbol'].head(5).tolist())}")
+            print(f"  Records: {count} ({percentage:.1f}%)")
+            print(f"  Examples: {examples}")
 
         print(f"\n{'='*80}")
-        print(f"Total: {total_companies} companies across {len(sectors_dict)} sectors")
+        print(f"Total: {total_companies} records across {len(sectors_dict)} sectors")
         print("="*80)
 
     def save_sectors_to_csv(self, sectors_dict: Dict[str, pd.DataFrame],
@@ -294,15 +348,14 @@ class SP500SectorCategorizer:
 # STEP 4: Main Execution Function
 # ============================================================================
 
-def run_sector_categorization(csv_path: str = None,
+def run_sector_categorization(csv_path: str,
                              save_excel: bool = True,
                              save_csv: bool = True):
     """
     Main function to categorize S&P 500 companies by sector
 
     Args:
-        csv_path: Optional path to CSV file with S&P 500 data
-                 If not provided, will fetch from Wikipedia
+        csv_path: Path to your CSV file with company data (must have 'ticker' or 'Symbol' column)
         save_excel: Whether to save as Excel file (default: True)
         save_csv: Whether to save as CSV files (default: True)
 
@@ -317,8 +370,16 @@ def run_sector_categorization(csv_path: str = None,
     # Initialize categorizer
     categorizer = SP500SectorCategorizer(output_dir="sp500_sectors_output")
 
-    # Fetch data
-    df = categorizer.fetch_sp500_with_sectors(csv_path=csv_path)
+    # Read your data file
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    print(f"📂 Reading data from: {csv_path}")
+    data_df = pd.read_csv(csv_path)
+    print(f"✓ Loaded {len(data_df)} records from file")
+
+    # Merge with sector data
+    df = categorizer.merge_with_sector_data(data_df)
 
     # Categorize by sector
     sectors_dict = categorizer.categorize_by_sector(df)
@@ -362,31 +423,41 @@ if __name__ == "__main__":
     sectors_dict, categorizer = run_sector_categorization(csv_path=CSV_PATH)
 
     # ========================================
-    # OPTION 2: Fetch from Wikipedia (Alternative)
-    # ========================================
-    # If you want to fetch from Wikipedia instead, uncomment below:
-    # sectors_dict, categorizer = run_sector_categorization()
-
-    # ========================================
-    # BONUS: Get companies from specific sectors
+    # BONUS: Get records from specific sectors
     # ========================================
     print("\n" + "="*80)
-    print("💡 EXAMPLE: Getting companies from specific sectors")
+    print("💡 EXAMPLE: Getting records from specific sectors")
     print("="*80)
 
-    # Example: Get all technology companies
+    # Example: Get all technology records
     try:
-        tech_companies = categorizer.get_companies_by_sector(sectors_dict, "Information Technology")
-        print(f"\n🖥️  Information Technology Companies ({len(tech_companies)}):")
-        print(tech_companies[['Symbol', 'Security']].head(10).to_string(index=False))
+        tech_records = categorizer.get_companies_by_sector(sectors_dict, "Information Technology")
+        print(f"\n🖥️  Information Technology Records: {len(tech_records)}")
+
+        # Show available columns
+        display_cols = []
+        for col in ['ticker', 'Symbol', 'company_name', 'Security', 'filing_date']:
+            if col in tech_records.columns:
+                display_cols.append(col)
+
+        if display_cols:
+            print(tech_records[display_cols].head(10).to_string(index=False))
     except Exception as e:
         print(f"Note: {e}")
 
-    # Example: Get all healthcare companies
+    # Example: Get all healthcare records
     try:
         healthcare = categorizer.get_companies_by_sector(sectors_dict, "Health Care")
-        print(f"\n🏥 Health Care Companies ({len(healthcare)}):")
-        print(healthcare[['Symbol', 'Security']].head(10).to_string(index=False))
+        print(f"\n🏥 Health Care Records: {len(healthcare)}")
+
+        # Show available columns
+        display_cols = []
+        for col in ['ticker', 'Symbol', 'company_name', 'Security', 'filing_date']:
+            if col in healthcare.columns:
+                display_cols.append(col)
+
+        if display_cols:
+            print(healthcare[display_cols].head(10).to_string(index=False))
     except Exception as e:
         print(f"Note: {e}")
 
