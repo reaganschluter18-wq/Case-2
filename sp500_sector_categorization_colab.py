@@ -350,15 +350,22 @@ def run_sector_categorization(csv_path: str = None,
 
 if __name__ == "__main__":
     # ========================================
-    # OPTION 1: Fetch from Wikipedia (Default)
+    # OPTION 1: Use CSV file from Google Drive
     # ========================================
-    sectors_dict, categorizer = run_sector_categorization()
+    # Mount Google Drive
+    from google.colab import drive
+    drive.mount('/content/drive')
+
+    # Path to your CSV file
+    CSV_PATH = "/content/drive/MyDrive/ACC 380K Case 2/Clean/sp500_10k_filings_CLEAN.csv"
+
+    sectors_dict, categorizer = run_sector_categorization(csv_path=CSV_PATH)
 
     # ========================================
-    # OPTION 2: Use your own CSV file
+    # OPTION 2: Fetch from Wikipedia (Alternative)
     # ========================================
-    # Upload your CSV to Colab first, then uncomment below:
-    # sectors_dict, categorizer = run_sector_categorization(csv_path="/content/your_file.csv")
+    # If you want to fetch from Wikipedia instead, uncomment below:
+    # sectors_dict, categorizer = run_sector_categorization()
 
     # ========================================
     # BONUS: Get companies from specific sectors
